@@ -1,7 +1,7 @@
 import { CONFIG } from './config.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { session: null, projects: [], attachment: null, githubConnected: false };
+const state = { session: null, projects: [], attachment: null, githubConnected: false, subscriptionActive: false };
 
 const authView = $('authView');
 const workspaceView = $('workspaceView');
@@ -52,7 +52,8 @@ async function clearSession() {
   state.session = null;
   state.projects = [];
   state.githubConnected = false;
-  await chrome.storage.local.remove(['ferrolSession', 'ferrolProjectId', 'ferrolThreads']);
+  state.subscriptionActive = false;
+  await chrome.storage.local.remove(['ferrolSession', 'ferrolProjectId', 'ferrolThreads', 'ferrolGithubState']);
 }
 
 function appendMessage(role, text) {
@@ -151,6 +152,7 @@ async function fetchSubscription() {
   });
   const sub = rows?.[0];
   const active = sub?.status === 'active' && (!sub.current_period_end || new Date(sub.current_period_end) > new Date());
+  state.subscriptionActive = active;
   subscriptionBadge.textContent = active ? 'Assinatura ativa' : 'Assinatura inativa';
   subscriptionBadge.className = `badge ${active ? 'active' : 'muted'}`;
   return active;
@@ -175,7 +177,7 @@ async function fetchGithubState() {
 }
 
 async function fetchProjects() {
-  state.projects = await api('/rest/v1/projects?select=id,name,github_owner,github_repo,github_default_branch,updated_at&order=updated_at.desc', {
+  state.projects = await api('/rest/v1/projects?select=id,name,github_owner,github_repo,github_default_branch,updated_at&is_active=eq.true&order=updated_at.desc', {
     headers: headers(state.session.access_token, false)
   });
   const stored = await chrome.storage.local.get('ferrolProjectId');
@@ -194,9 +196,19 @@ async function fetchProjects() {
   await chrome.storage.local.set({ ferrolProjectId: projectSelect.value });
 }
 
-async function refreshWorkspace() {
+async function syncGithubRepos() {
+  if (!state.githubConnected) return { repositories: 0 };
+  return callUrl(CONFIG.githubSyncUrl, {
+    method: 'POST',
+    headers: headers(state.session.access_token),
+    body: '{}'
+  });
+}
+
+async function refreshWorkspace({ syncGithub = false } = {}) {
   if (!(await refreshSessionIfNeeded())) return false;
   await fetchGithubState();
+  if (syncGithub && state.githubConnected) await syncGithubRepos();
   await fetchProjects();
   await fetchSubscription();
   return true;
@@ -249,15 +261,20 @@ githubConnectBtn.addEventListener('click', async () => {
   githubConnectBtn.disabled = true;
   try {
     if (!(await refreshSessionIfNeeded())) return showAuth();
+
+    if (state.githubConnected) {
+      chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: CONFIG.githubManageUrl });
+      appendMessage('system', 'Gerencie os repositórios autorizados no GitHub. Depois volte e clique em Atualizar para sincronizar.');
+      return;
+    }
+
     const data = await callUrl(CONFIG.githubConnectStartUrl, {
       method: 'POST', headers: headers(state.session.access_token), body: '{}'
     });
     if (!data?.install_url) throw new Error('O backend não retornou o link do GitHub.');
     await chrome.storage.local.set({ ferrolGithubState: data.state || null });
     chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: data.install_url });
-    appendMessage('system', state.githubConnected
-      ? 'Gerencie os repositórios autorizados no GitHub. Depois volte à extensão e clique em Atualizar.'
-      : 'Autorize o GitHub e escolha os repositórios. Depois volte à extensão e clique em Atualizar.');
+    appendMessage('system', 'Autorize o GitHub e escolha os repositórios. Depois volte à extensão e clique em Atualizar.');
   } catch (e) {
     appendMessage('system', `Falha ao conectar GitHub: ${e.message}`);
   } finally {
@@ -267,14 +284,17 @@ githubConnectBtn.addEventListener('click', async () => {
 
 $('refreshBtn').addEventListener('click', async () => {
   $('refreshBtn').disabled = true;
+  const original = $('refreshBtn').textContent;
+  $('refreshBtn').textContent = '...';
   try {
-    await refreshWorkspace();
+    await refreshWorkspace({ syncGithub: true });
     await loadChatHistory();
-    appendMessage('system', 'Projetos atualizados.');
+    appendMessage('system', 'GitHub e projetos sincronizados.');
   } catch (e) {
     appendMessage('system', `Falha ao atualizar: ${e.message}`);
   } finally {
     $('refreshBtn').disabled = false;
+    $('refreshBtn').textContent = original;
   }
 });
 
@@ -318,6 +338,7 @@ $('composer').addEventListener('submit', async (event) => {
   const projectId = projectSelect.value;
   if (!prompt) return;
   if (!projectId) return appendMessage('system', 'Escolha um projeto primeiro.');
+  if (!state.subscriptionActive) return appendMessage('system', 'Sua assinatura está inativa. Ative a assinatura para usar o agente.');
 
   appendMessage('user', prompt + (state.attachment ? `\n📎 ${state.attachment.name}` : ''));
   promptEl.value = '';
