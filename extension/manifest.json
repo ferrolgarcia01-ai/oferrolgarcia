@@ -1,12 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Ferrol AI Developer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agente de desenvolvimento conectado ao GitHub com preview opcional no Lovable/Vercel.",
-  "permissions": ["storage", "identity", "tabs"],
+  "permissions": ["storage", "tabs"],
   "host_permissions": [
-    "https://ypegwpoykntbpburndjf.supabase.co/*",
-    "https://github.com/*"
+    "https://ypegwpoykntbpburndjf.supabase.co/*"
   ],
   "action": {
     "default_title": "Ferrol AI Developer",
