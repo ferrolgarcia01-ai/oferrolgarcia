@@ -52,7 +52,7 @@ async function clearSession() {
   state.session = null;
   state.projects = [];
   state.githubConnected = false;
-  await chrome.storage.local.remove(['ferrolSession', 'ferrolProjectId']);
+  await chrome.storage.local.remove(['ferrolSession', 'ferrolProjectId', 'ferrolThreads']);
 }
 
 function appendMessage(role, text) {
@@ -61,6 +61,52 @@ function appendMessage(role, text) {
   div.textContent = text;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+}
+
+function resetChat(message = 'Olá! Escolha um projeto e me diga o que quer criar ou alterar.') {
+  chat.innerHTML = '';
+  appendMessage('assistant', message);
+}
+
+async function getThread(projectId) {
+  if (!projectId) return null;
+  const stored = await chrome.storage.local.get('ferrolThreads');
+  return stored.ferrolThreads?.[projectId] || null;
+}
+
+async function setThread(projectId, threadId) {
+  if (!projectId || !threadId) return;
+  const stored = await chrome.storage.local.get('ferrolThreads');
+  const threads = stored.ferrolThreads || {};
+  threads[projectId] = threadId;
+  await chrome.storage.local.set({ ferrolThreads: threads });
+}
+
+async function clearThread(projectId) {
+  if (!projectId) return;
+  const stored = await chrome.storage.local.get('ferrolThreads');
+  const threads = stored.ferrolThreads || {};
+  delete threads[projectId];
+  await chrome.storage.local.set({ ferrolThreads: threads });
+}
+
+async function loadChatHistory() {
+  const projectId = projectSelect.value;
+  if (!projectId) return resetChat('Conecte o GitHub e escolha um projeto para começar.');
+  const threadId = await getThread(projectId);
+  if (!threadId) return resetChat('Novo chat. Me diga o que quer criar ou alterar neste projeto.');
+  try {
+    const rows = await api(`/rest/v1/chat_messages?select=role,content,created_at&thread_id=eq.${encodeURIComponent(threadId)}&order=created_at.asc&limit=60`, {
+      headers: headers(state.session.access_token, false)
+    });
+    chat.innerHTML = '';
+    const visible = (rows || []).filter((m) => m.role === 'user' || m.role === 'assistant');
+    if (!visible.length) return resetChat('Novo chat. Me diga o que quer criar ou alterar neste projeto.');
+    for (const item of visible) appendMessage(item.role, item.content || '');
+  } catch {
+    await clearThread(projectId);
+    resetChat('Novo chat. Me diga o que quer criar ou alterar neste projeto.');
+  }
 }
 
 async function login(email, password) {
@@ -149,10 +195,11 @@ async function fetchProjects() {
 }
 
 async function refreshWorkspace() {
-  await refreshSessionIfNeeded();
+  if (!(await refreshSessionIfNeeded())) return false;
   await fetchGithubState();
   await fetchProjects();
   await fetchSubscription();
+  return true;
 }
 
 async function bootWorkspace() {
@@ -161,8 +208,12 @@ async function bootWorkspace() {
   authView.classList.add('hidden');
   workspaceView.classList.remove('hidden');
   $('userEmail').textContent = state.session.user?.email || '';
-  try { await refreshWorkspace(); }
-  catch (e) { appendMessage('system', `Não consegui atualizar a conta: ${e.message}`); }
+  try {
+    await refreshWorkspace();
+    await loadChatHistory();
+  } catch (e) {
+    appendMessage('system', `Não consegui atualizar a conta: ${e.message}`);
+  }
 }
 
 function showAuth() {
@@ -199,16 +250,14 @@ githubConnectBtn.addEventListener('click', async () => {
   try {
     if (!(await refreshSessionIfNeeded())) return showAuth();
     const data = await callUrl(CONFIG.githubConnectStartUrl, {
-      method: 'POST',
-      headers: headers(state.session.access_token),
-      body: '{}',
+      method: 'POST', headers: headers(state.session.access_token), body: '{}'
     });
     if (!data?.install_url) throw new Error('O backend não retornou o link do GitHub.');
     await chrome.storage.local.set({ ferrolGithubState: data.state || null });
     chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: data.install_url });
     appendMessage('system', state.githubConnected
-      ? 'Gerencie os repositórios autorizados no GitHub. Depois volte à extensão.'
-      : 'Autorize o GitHub e escolha os repositórios. Depois volte à extensão.');
+      ? 'Gerencie os repositórios autorizados no GitHub. Depois volte à extensão e clique em Atualizar.'
+      : 'Autorize o GitHub e escolha os repositórios. Depois volte à extensão e clique em Atualizar.');
   } catch (e) {
     appendMessage('system', `Falha ao conectar GitHub: ${e.message}`);
   } finally {
@@ -216,8 +265,33 @@ githubConnectBtn.addEventListener('click', async () => {
   }
 });
 
+$('refreshBtn').addEventListener('click', async () => {
+  $('refreshBtn').disabled = true;
+  try {
+    await refreshWorkspace();
+    await loadChatHistory();
+    appendMessage('system', 'Projetos atualizados.');
+  } catch (e) {
+    appendMessage('system', `Falha ao atualizar: ${e.message}`);
+  } finally {
+    $('refreshBtn').disabled = false;
+  }
+});
+
+$('newChatBtn').addEventListener('click', async () => {
+  const projectId = projectSelect.value;
+  if (!projectId) return appendMessage('system', 'Escolha um projeto primeiro.');
+  await clearThread(projectId);
+  resetChat('Novo chat iniciado. O que você quer fazer neste projeto?');
+});
+
+$('supabaseInfoBtn').addEventListener('click', () => {
+  appendMessage('system', 'Ferrol Cloud protege login, assinatura, histórico e execução do agente. A conexão do Supabase de cada projeto será feita pelo próprio chat.');
+});
+
 projectSelect.addEventListener('change', async () => {
   if (projectSelect.value) await chrome.storage.local.set({ ferrolProjectId: projectSelect.value });
+  await loadChatHistory();
 });
 
 imageInput.addEventListener('change', async () => {
@@ -252,13 +326,15 @@ $('composer').addEventListener('submit', async (event) => {
 
   try {
     if (!(await refreshSessionIfNeeded())) return showAuth();
+    const threadId = await getThread(projectId);
     const res = await fetch(CONFIG.agentFunctionUrl, {
       method: 'POST',
       headers: headers(state.session.access_token),
-      body: JSON.stringify({ project_id: projectId, prompt, image_data_url: state.attachment?.dataUrl || null })
+      body: JSON.stringify({ project_id: projectId, thread_id: threadId, prompt, image_data_url: state.attachment?.dataUrl || null })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || `Erro ${res.status}`);
+    if (data.thread_id) await setThread(projectId, data.thread_id);
     appendMessage('assistant', data.message || 'Alterações concluídas.');
     state.attachment = null;
     imageInput.value = '';
