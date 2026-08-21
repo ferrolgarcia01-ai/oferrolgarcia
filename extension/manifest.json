@@ -1,21 +1,31 @@
 {
   "manifest_version": 3,
   "name": "Ferrol AI Developer",
-  "version": "0.2.0",
-  "description": "Agente de desenvolvimento conectado ao GitHub com preview opcional no Lovable/Vercel.",
-  "permissions": ["storage", "tabs"],
+  "version": "0.7.0",
+  "description": "Agente de desenvolvimento conectado ao GitHub, com chat, imagens, áudio e integração nativa com Lovable.",
+  "permissions": ["storage", "tabs", "activeTab", "sidePanel", "scripting"],
   "host_permissions": [
-    "https://ypegwpoykntbpburndjf.supabase.co/*"
+    "https://ypegwpoykntbpburndjf.supabase.co/*",
+    "https://lovable.dev/*"
   ],
   "action": {
-    "default_title": "Ferrol AI Developer",
-    "default_popup": "popup.html"
+    "default_title": "Abrir Ferrol AI"
   },
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://lovable.dev/*"],
+      "js": ["content-lovable.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self';"
   }
 }
