@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ferrol AI</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand-wrap">
+        <div class="logo">F</div>
+        <div>
+          <div class="brand">FERROL <span>AI</span></div>
+          <div class="brand-sub">Developer Agent</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="subscriptionBadge" class="status-chip muted">...</span>
+        <button id="settingsBtn" class="icon-btn" title="Configurações">•••</button>
+      </div>
+    </header>
+
+    <section id="authView" class="auth-view">
+      <div class="auth-hero">
+        <div class="eyebrow">Seu agente de código</div>
+        <h1>Converse.<br>Eu faço no GitHub.</h1>
+        <p>Projeto, contexto, imagem e áudio. Sem expor suas chaves privadas no navegador.</p>
+      </div>
+      <form id="loginForm" class="auth-card">
+        <input id="email" type="email" placeholder="E-mail" autocomplete="email" required />
+        <input id="password" type="password" placeholder="Senha" autocomplete="current-password" required />
+        <button type="submit" class="primary wide">Entrar</button>
+        <button id="signupBtn" type="button" class="secondary wide">Criar conta</button>
+        <p id="authError" class="error"></p>
+      </form>
+    </section>
+
+    <section id="workspaceView" class="workspace hidden">
+      <div class="project-line">
+        <span id="projectContextDot" class="context-dot"></span>
+        <select id="projectSelect" aria-label="Projeto"><option value="">Conecte o GitHub</option></select>
+        <button id="syncBtn" class="icon-btn compact" title="Sincronizar">↻</button>
+        <button id="newChatBtn" class="icon-btn compact" title="Novo chat">＋</button>
+      </div>
+
+      <div id="contextBar" class="context-bar hidden">
+        <span class="context-live"></span>
+        <span id="contextText">Projeto do Lovable identificado</span>
+      </div>
+
+      <section id="chat" class="chat"></section>
+
+      <form id="composer" class="composer">
+        <div id="imageAttachment" class="attachment-card hidden">
+          <img id="imageThumb" alt="Imagem anexada" />
+          <div class="attachment-copy">
+            <strong id="imageName">imagem.png</strong>
+            <span>Imagem pronta para o agente</span>
+          </div>
+          <button id="removeImageBtn" type="button" class="attachment-remove">×</button>
+        </div>
+
+        <div id="audioState" class="audio-state hidden">
+          <span class="record-dot"></span>
+          <span id="audioStateText">Gravando...</span>
+          <strong id="audioTimer">00:00</strong>
+        </div>
+
+        <textarea id="prompt" rows="3" placeholder="Peça uma alteração, cole um print com Ctrl+V ou descreva o que quer construir..."></textarea>
+
+        <div class="composer-footer">
+          <div class="tool-row">
+            <label class="tool-btn" title="Anexar imagem">＋<input id="imageInput" type="file" accept="image/*" hidden /></label>
+            <button id="micBtn" type="button" class="tool-btn" title="Gravar áudio">◉</button>
+          </div>
+          <div class="send-row">
+            <span id="composerHint" class="composer-hint"></span>
+            <button id="sendBtn" type="submit" class="send-btn">Enviar</button>
+          </div>
+        </div>
+      </form>
+
+      <aside id="settingsPanel" class="drawer hidden">
+        <div class="drawer-head">
+          <div>
+            <strong>Configurações</strong>
+            <span>Conexões do agente</span>
+          </div>
+          <button id="closeSettingsBtn" class="icon-btn">×</button>
+        </div>
+
+        <div class="setting-row native-setting">
+          <div>
+            <strong>Chat nativo do Lovable</strong>
+            <span>Quando ligado, Enter no chat do Lovable envia para o Ferrol AI.</span>
+          </div>
+          <button id="nativeModeToggle" class="toggle-btn" data-active="true"><span></span></button>
+        </div>
+
+        <div class="connection-card">
+          <div class="connection-head">
+            <div class="connection-title"><span class="connection-icon">GH</span><strong>GitHub</strong></div>
+            <span id="githubBadge" class="small-status">...</span>
+          </div>
+          <p id="githubStatus">Não conectado</p>
+          <button id="githubConnectBtn" class="secondary wide">Conectar / gerenciar</button>
+        </div>
+
+        <div class="connection-card">
+          <div class="connection-head">
+            <div class="connection-title"><span class="connection-icon supa">S</span><strong>Supabase</strong></div>
+            <span id="supabaseBadge" class="small-status">Não conectado</span>
+          </div>
+          <p id="supabaseStatus">Conecte sua conta Supabase pelo OAuth oficial. O Ferrol AI nunca pede service role no navegador.</p>
+          <button id="supabaseConnectBtn" class="secondary wide">Conectar Supabase</button>
+          <div id="supabaseProjectPickerWrap" class="picker-wrap hidden">
+            <select id="supabaseProjectSelect"></select>
+            <button id="linkSupabaseProjectBtn" class="secondary wide">Usar neste projeto</button>
+          </div>
+        </div>
+
+        <div class="security-note">
+          <strong>Motor protegido no backend</strong>
+          <p>OpenAI, GitHub App, assinatura e regras do agente não ficam no ZIP da extensão.</p>
+        </div>
+
+        <button id="logoutBtn" class="logout-btn">Sair da conta</button>
+        <span id="userEmail" class="drawer-email"></span>
+      </aside>
+    </section>
+  </main>
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
