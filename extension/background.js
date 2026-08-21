@@ -68,8 +68,7 @@ async function getFreshSession() {
   return session;
 }
 
-async function ensureLicense(session) {
-  const deviceId = await getDeviceId();
+async function ensureLicense(session, deviceId) {
   const data = await parseResponse(await fetch(CONFIG.licenseStatusUrl, {
     method: 'GET',
     headers: headers(session.access_token, false, { 'x-fg-device-id': deviceId }),
@@ -125,13 +124,14 @@ async function sendNativePrompt(message) {
   if (stored.ferrolNativeLovableMode === false) throw new Error('Chat nativo do FG AI está desativado.');
 
   const session = await getFreshSession();
-  await ensureLicense(session);
+  const deviceId = await getDeviceId();
+  await ensureLicense(session, deviceId);
   const project = await selectProjectForNative(session);
   const threadId = await getThread(project.id);
 
   const data = await parseResponse(await fetch(CONFIG.agentFunctionUrl, {
     method: 'POST',
-    headers: headers(session.access_token),
+    headers: headers(session.access_token, true, { 'x-fg-device-id': deviceId }),
     body: JSON.stringify({
       project_id: project.id,
       thread_id: threadId,
