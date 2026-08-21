@@ -1,7 +1,7 @@
 import { CONFIG } from './config.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { session: null, projects: [], attachment: null };
+const state = { session: null, projects: [], attachment: null, githubConnected: false };
 
 const authView = $('authView');
 const workspaceView = $('workspaceView');
@@ -34,6 +34,15 @@ async function api(path, options = {}) {
   return body;
 }
 
+async function callUrl(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!res.ok) throw new Error(body?.message || body?.error || `Erro ${res.status}`);
+  return body;
+}
+
 async function saveSession(session) {
   state.session = session;
   await chrome.storage.local.set({ ferrolSession: session });
@@ -41,7 +50,9 @@ async function saveSession(session) {
 
 async function clearSession() {
   state.session = null;
-  await chrome.storage.local.remove('ferrolSession');
+  state.projects = [];
+  state.githubConnected = false;
+  await chrome.storage.local.remove(['ferrolSession', 'ferrolProjectId']);
 }
 
 function appendMessage(role, text) {
@@ -100,10 +111,11 @@ async function fetchSubscription() {
 }
 
 async function fetchGithubState() {
-  const rows = await api('/rest/v1/github_installations?select=installation_id,account_login&limit=1', {
+  const rows = await api('/rest/v1/github_installations?select=installation_id,account_login&order=updated_at.desc&limit=1', {
     headers: headers(state.session.access_token, false)
   });
   const item = rows?.[0];
+  state.githubConnected = Boolean(item);
   if (item) {
     githubDot.classList.add('on');
     githubStatus.textContent = item.account_login || 'Conectado';
@@ -117,20 +129,30 @@ async function fetchGithubState() {
 }
 
 async function fetchProjects() {
-  state.projects = await api('/rest/v1/projects?select=id,name,github_owner,github_repo,github_default_branch&order=updated_at.desc', {
+  state.projects = await api('/rest/v1/projects?select=id,name,github_owner,github_repo,github_default_branch,updated_at&order=updated_at.desc', {
     headers: headers(state.session.access_token, false)
   });
+  const stored = await chrome.storage.local.get('ferrolProjectId');
   projectSelect.innerHTML = '';
   if (!state.projects.length) {
-    projectSelect.innerHTML = '<option value="">Nenhum projeto conectado</option>';
+    projectSelect.innerHTML = `<option value="">${state.githubConnected ? 'Nenhum repositório autorizado' : 'Conecte o GitHub primeiro'}</option>`;
     return;
   }
   for (const project of state.projects) {
     const option = document.createElement('option');
     option.value = project.id;
     option.textContent = `${project.name} · ${project.github_owner}/${project.github_repo}`;
+    if (stored.ferrolProjectId === project.id) option.selected = true;
     projectSelect.appendChild(option);
   }
+  await chrome.storage.local.set({ ferrolProjectId: projectSelect.value });
+}
+
+async function refreshWorkspace() {
+  await refreshSessionIfNeeded();
+  await fetchGithubState();
+  await fetchProjects();
+  await fetchSubscription();
 }
 
 async function bootWorkspace() {
@@ -139,7 +161,8 @@ async function bootWorkspace() {
   authView.classList.add('hidden');
   workspaceView.classList.remove('hidden');
   $('userEmail').textContent = state.session.user?.email || '';
-  await Promise.allSettled([fetchSubscription(), fetchGithubState(), fetchProjects()]);
+  try { await refreshWorkspace(); }
+  catch (e) { appendMessage('system', `Não consegui atualizar a conta: ${e.message}`); }
 }
 
 function showAuth() {
@@ -170,12 +193,31 @@ $('logoutBtn').addEventListener('click', async () => {
   showAuth();
 });
 
-githubConnectBtn.addEventListener('click', () => {
-  if (!CONFIG.githubInstallUrl) {
-    appendMessage('system', 'GitHub App ainda não configurado pelo administrador.');
-    return;
+githubConnectBtn.addEventListener('click', async () => {
+  if (githubConnectBtn.disabled) return;
+  githubConnectBtn.disabled = true;
+  try {
+    if (!(await refreshSessionIfNeeded())) return showAuth();
+    const data = await callUrl(CONFIG.githubConnectStartUrl, {
+      method: 'POST',
+      headers: headers(state.session.access_token),
+      body: '{}',
+    });
+    if (!data?.install_url) throw new Error('O backend não retornou o link do GitHub.');
+    await chrome.storage.local.set({ ferrolGithubState: data.state || null });
+    chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: data.install_url });
+    appendMessage('system', state.githubConnected
+      ? 'Gerencie os repositórios autorizados no GitHub. Depois volte à extensão.'
+      : 'Autorize o GitHub e escolha os repositórios. Depois volte à extensão.');
+  } catch (e) {
+    appendMessage('system', `Falha ao conectar GitHub: ${e.message}`);
+  } finally {
+    githubConnectBtn.disabled = false;
   }
-  chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: CONFIG.githubInstallUrl });
+});
+
+projectSelect.addEventListener('change', async () => {
+  if (projectSelect.value) await chrome.storage.local.set({ ferrolProjectId: projectSelect.value });
 });
 
 imageInput.addEventListener('change', async () => {
@@ -209,7 +251,7 @@ $('composer').addEventListener('submit', async (event) => {
   sendBtn.textContent = 'Trabalhando...';
 
   try {
-    await refreshSessionIfNeeded();
+    if (!(await refreshSessionIfNeeded())) return showAuth();
     const res = await fetch(CONFIG.agentFunctionUrl, {
       method: 'POST',
       headers: headers(state.session.access_token),
