@@ -1,13 +1,13 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 
-const apiHeaders = (token: string) => ({
-  Authorization: `Bearer ${token}`,
+const apiHeaders = (token?: string) => ({
+  ...(token ? { Authorization: `Bearer ${token}` } : {}),
   Accept: 'application/vnd.github+json',
   'X-GitHub-Api-Version': '2022-11-28',
   'User-Agent': 'Ferrol-AI-Developer',
 });
 
-async function github(token: string, path: string) {
+async function github(path: string, token?: string) {
   const res = await fetch(`https://api.github.com${path}`, { headers: apiHeaders(token) });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.message || `GitHub ${res.status}`);
@@ -15,9 +15,11 @@ async function github(token: string, path: string) {
 }
 
 async function exchangeCode(code: string) {
-  const clientId = Deno.env.get('GITHUB_APP_CLIENT_ID');
   const clientSecret = Deno.env.get('GITHUB_APP_CLIENT_SECRET');
-  if (!clientId || !clientSecret) throw new Error('OAuth do GitHub App ainda não configurado no servidor.');
+  if (!clientSecret) throw new Error('Client Secret do GitHub App ainda não configurado no servidor.');
+  const app = await github('/apps/ferrol-ai-developer');
+  const clientId = app.client_id;
+  if (!clientId) throw new Error('GitHub não retornou o Client ID do App.');
   const res = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'Ferrol-AI-Developer' },
@@ -31,7 +33,7 @@ async function exchangeCode(code: string) {
 async function listInstallations(userToken: string) {
   const all: any[] = [];
   for (let page = 1; page <= 10; page++) {
-    const data = await github(userToken, `/user/installations?per_page=100&page=${page}`);
+    const data = await github(`/user/installations?per_page=100&page=${page}`, userToken);
     const items = data.installations || [];
     all.push(...items);
     if (items.length < 100) break;
@@ -42,7 +44,7 @@ async function listInstallations(userToken: string) {
 async function listRepos(userToken: string, installationId: number) {
   const all: any[] = [];
   for (let page = 1; page <= 10; page++) {
-    const data = await github(userToken, `/user/installations/${installationId}/repositories?per_page=100&page=${page}`);
+    const data = await github(`/user/installations/${installationId}/repositories?per_page=100&page=${page}`, userToken);
     const items = data.repositories || [];
     all.push(...items);
     if (items.length < 100) break;
@@ -62,7 +64,7 @@ Deno.serve(async (req) => {
     if (!code || state.length < 32) return page('Autorização inválida', 'O código ou estado de segurança não foi retornado pelo GitHub.', false, 400);
 
     const userToken = await exchangeCode(code);
-    const githubUser = await github(userToken, '/user');
+    const githubUser = await github('/user', userToken);
     const installations = await listInstallations(userToken);
     if (!installations.length) return page('GitHub autorizado', 'Sua identidade foi autorizada, mas nenhuma instalação do Ferrol AI Developer ficou disponível. Instale o App em pelo menos um repositório.', false, 409);
 
@@ -73,11 +75,7 @@ Deno.serve(async (req) => {
         installation_id: Number(installation.id),
         account_login: installation.account?.login || '',
         account_type: installation.account?.type || '',
-        repositories: repos.map((r: any) => ({
-          name: r.name,
-          owner: r.owner?.login || installation.account?.login || '',
-          default_branch: r.default_branch || 'main',
-        })),
+        repositories: repos.map((r: any) => ({ name: r.name, owner: r.owner?.login || installation.account?.login || '', default_branch: r.default_branch || 'main' })),
       });
     }
 
