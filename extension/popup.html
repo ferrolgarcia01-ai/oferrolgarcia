@@ -45,7 +45,13 @@
       </div>
 
       <div class="project-row">
-        <label for="projectSelect">Projeto</label>
+        <div class="project-head">
+          <label for="projectSelect">Projeto</label>
+          <div class="project-actions">
+            <button id="refreshBtn" type="button" class="mini">Atualizar</button>
+            <button id="newChatBtn" type="button" class="mini">Novo chat</button>
+          </div>
+        </div>
         <select id="projectSelect"><option value="">Conecte o GitHub primeiro</option></select>
       </div>
 
@@ -56,7 +62,7 @@
       <form id="composer" class="composer">
         <textarea id="prompt" rows="3" placeholder="Ex.: Crie uma landing page premium igual à imagem que vou enviar..."></textarea>
         <div class="composer-actions">
-          <label class="attach">📎<input id="imageInput" type="file" accept="image/*" hidden /></label>
+          <label class="attach" title="Enviar imagem">📎<input id="imageInput" type="file" accept="image/*" hidden /></label>
           <button id="sendBtn" class="primary" type="submit">Enviar</button>
         </div>
         <div id="attachmentName" class="attachment-name"></div>
