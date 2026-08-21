@@ -19,12 +19,16 @@ Deno.serve(async (req) => {
 
     const url = Deno.env.get('SUPABASE_URL')!;
     const publishable = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!;
-    const client = createClient(url, publishable, { global: { headers: { Authorization: auth } } });
-    const { data: userData, error: userError } = await client.auth.getUser(accessToken);
+    const userClient = createClient(url, publishable, { global: { headers: { Authorization: auth } } });
+    const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data: userData, error: userError } = await userClient.auth.getUser(accessToken);
     if (userError || !userData.user) return json({ error: 'Sessão inválida.' }, 401);
 
     const state = `${crypto.randomUUID().replaceAll('-', '')}${crypto.randomUUID().replaceAll('-', '')}`;
-    const { error } = await client.rpc('create_github_installation_link_state', { p_state: state });
+    const { error } = await admin.rpc('create_github_installation_link_state', {
+      p_state: state,
+      p_user_id: userData.user.id,
+    });
     if (error) throw new Error(error.message);
 
     return json({
