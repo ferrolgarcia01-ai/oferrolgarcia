@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Ferrol AI Developer",
-  "version": "0.7.0",
-  "description": "Agente de desenvolvimento conectado ao GitHub, com chat, imagens, áudio e integração nativa com Lovable.",
+  "name": "FG AI Developer",
+  "version": "1.0.0",
+  "description": "Agente de desenvolvimento com IA conectado ao GitHub, com chat nativo no Lovable, imagens, arquivos, áudio e Supabase opcional.",
   "permissions": ["storage", "tabs", "activeTab", "sidePanel", "scripting"],
   "host_permissions": [
     "https://ypegwpoykntbpburndjf.supabase.co/*",
     "https://lovable.dev/*"
   ],
   "action": {
-    "default_title": "Abrir Ferrol AI"
+    "default_title": "Abrir FG AI"
   },
   "background": {
     "service_worker": "background.js",
