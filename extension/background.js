@@ -1,11 +1,15 @@
 import { CONFIG } from './config.js';
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   try { await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }); } catch {}
-  const stored = await chrome.storage.local.get(['ferrolNativeLovableMode', 'ferrolExtensionEnabled']);
+  const stored = await chrome.storage.local.get(['ferrolNativeLovableMode', 'ferrolExtensionEnabled', 'ferrolInstallId']);
   const patch = {};
   if (typeof stored.ferrolNativeLovableMode !== 'boolean') patch.ferrolNativeLovableMode = true;
   if (typeof stored.ferrolExtensionEnabled !== 'boolean') patch.ferrolExtensionEnabled = true;
+  if (!stored.ferrolInstallId) patch.ferrolInstallId = crypto.randomUUID();
+  if (reason === 'install') {
+    await chrome.storage.local.remove(['ferrolSession', 'ferrolLicenseInfo', 'ferrolProjectId', 'ferrolThreads', 'ferrolChatCache', 'ferrolDeviceId']);
+  }
   if (Object.keys(patch).length) await chrome.storage.local.set(patch);
 });
 
@@ -38,11 +42,20 @@ function normalize(value) {
 }
 
 async function getDeviceId() {
-  const stored = await chrome.storage.local.get('ferrolDeviceId');
+  const stored = await chrome.storage.local.get(['ferrolDeviceId', 'ferrolInstallId']);
+  let installId = stored.ferrolInstallId;
+  if (!installId) {
+    installId = crypto.randomUUID();
+    await chrome.storage.local.set({ ferrolInstallId: installId });
+  }
   if (stored.ferrolDeviceId) return stored.ferrolDeviceId;
-  const id = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+  const id = `${installId}-${crypto.randomUUID()}`;
   await chrome.storage.local.set({ ferrolDeviceId: id });
   return id;
+}
+
+async function clearAuthState() {
+  await chrome.storage.local.remove(['ferrolSession', 'ferrolLicenseInfo', 'ferrolProjectId', 'ferrolThreads', 'ferrolChatCache']);
 }
 
 async function getFreshSession() {
@@ -61,7 +74,7 @@ async function getFreshSession() {
       session = data;
       await chrome.storage.local.set({ ferrolSession: session });
     } catch (error) {
-      await chrome.storage.local.remove(['ferrolSession', 'ferrolLicenseInfo']);
+      await clearAuthState();
       throw new Error('Sua sessão da licença expirou. Abra o painel FG AI e ative a chave novamente.');
     }
   }
@@ -69,12 +82,19 @@ async function getFreshSession() {
 }
 
 async function ensureLicense(session, deviceId) {
-  const data = await parseResponse(await fetch(CONFIG.licenseStatusUrl, {
-    method: 'GET',
-    headers: headers(session.access_token, false, { 'x-fg-device-id': deviceId }),
-  }));
-  if (data?.license?.status !== 'active') throw new Error('Licença inativa.');
-  return data.license;
+  try {
+    const data = await parseResponse(await fetch(CONFIG.licenseStatusUrl, {
+      method: 'GET',
+      headers: headers(session.access_token, false, { 'x-fg-device-id': deviceId }),
+    }));
+    if (data?.license?.status !== 'active') throw new Error('Licença inativa.');
+    return data.license;
+  } catch (error) {
+    if (/sessão inválida|dispositivo não autorizado|reative sua licença/i.test(String(error?.message || ''))) {
+      await clearAuthState();
+    }
+    throw error;
+  }
 }
 
 async function fetchProjects(session) {
