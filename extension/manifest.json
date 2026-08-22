@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FG AI Developer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agente de desenvolvimento com IA conectado ao GitHub, com chat nativo no Lovable, imagens, arquivos, áudio e Supabase opcional.",
   "permissions": ["storage", "tabs", "activeTab", "sidePanel", "scripting"],
   "host_permissions": [
