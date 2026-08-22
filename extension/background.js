@@ -1,19 +1,44 @@
 import { CONFIG } from './config.js';
 
+const AUTH_ISOLATION_VERSION = 2;
+
+async function clearAuthState() {
+  await chrome.storage.local.remove([
+    'ferrolSession',
+    'ferrolLicenseInfo',
+    'ferrolProjectId',
+    'ferrolThreads',
+    'ferrolChatCache',
+  ]);
+}
+
+async function ensureAuthIsolationState() {
+  const stored = await chrome.storage.local.get(['ferrolAuthIsolationVersion', 'ferrolInstallId']);
+  const patch = {};
+  if (!stored.ferrolInstallId) patch.ferrolInstallId = crypto.randomUUID();
+  if (stored.ferrolAuthIsolationVersion !== AUTH_ISOLATION_VERSION) {
+    await clearAuthState();
+    patch.ferrolAuthIsolationVersion = AUTH_ISOLATION_VERSION;
+  }
+  if (Object.keys(patch).length) await chrome.storage.local.set(patch);
+}
+
+const isolationReady = ensureAuthIsolationState();
+
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  await isolationReady;
   try { await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }); } catch {}
   const stored = await chrome.storage.local.get(['ferrolNativeLovableMode', 'ferrolExtensionEnabled', 'ferrolInstallId']);
   const patch = {};
   if (typeof stored.ferrolNativeLovableMode !== 'boolean') patch.ferrolNativeLovableMode = true;
   if (typeof stored.ferrolExtensionEnabled !== 'boolean') patch.ferrolExtensionEnabled = true;
   if (!stored.ferrolInstallId) patch.ferrolInstallId = crypto.randomUUID();
-  if (reason === 'install') {
-    await chrome.storage.local.remove(['ferrolSession', 'ferrolLicenseInfo', 'ferrolProjectId', 'ferrolThreads', 'ferrolChatCache', 'ferrolDeviceId']);
-  }
+  if (reason === 'install') await clearAuthState();
   if (Object.keys(patch).length) await chrome.storage.local.set(patch);
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+  await isolationReady;
   try { await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }); } catch {}
 });
 
@@ -42,6 +67,7 @@ function normalize(value) {
 }
 
 async function getDeviceId() {
+  await isolationReady;
   const stored = await chrome.storage.local.get(['ferrolDeviceId', 'ferrolInstallId']);
   let installId = stored.ferrolInstallId;
   if (!installId) {
@@ -54,11 +80,8 @@ async function getDeviceId() {
   return id;
 }
 
-async function clearAuthState() {
-  await chrome.storage.local.remove(['ferrolSession', 'ferrolLicenseInfo', 'ferrolProjectId', 'ferrolThreads', 'ferrolChatCache']);
-}
-
 async function getFreshSession() {
+  await isolationReady;
   const stored = await chrome.storage.local.get('ferrolSession');
   let session = stored.ferrolSession || null;
   if (!session?.refresh_token) throw new Error('Ative sua licença no painel FG AI primeiro.');
@@ -139,6 +162,7 @@ async function setThread(projectId, threadId) {
 }
 
 async function sendNativePrompt(message) {
+  await isolationReady;
   const stored = await chrome.storage.local.get(['ferrolExtensionEnabled', 'ferrolNativeLovableMode']);
   if (stored.ferrolExtensionEnabled === false) throw new Error('FG AI está desativado.');
   if (stored.ferrolNativeLovableMode === false) throw new Error('Chat nativo do FG AI está desativado.');
@@ -182,8 +206,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === 'FG_LOGOUT') {
+    clearAuthState()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (message?.type === 'OPEN_SIDE_PANEL') {
     const open = async () => {
+      await isolationReady;
       if (message.view && message.view !== 'chat') await chrome.storage.local.set({ ferrolSidepanelView: message.view });
       const windowId = sender.tab?.windowId;
       if (!windowId) throw new Error('Janela ativa não encontrada.');
