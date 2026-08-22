@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FG AI Developer",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Agente de desenvolvimento com IA conectado ao GitHub, com chat nativo no Lovable, imagens, arquivos, áudio e Supabase opcional.",
   "permissions": ["storage", "tabs", "activeTab", "scripting"],
   "host_permissions": [
@@ -18,8 +18,14 @@
   "content_scripts": [
     {
       "matches": ["https://lovable.dev/*"],
-      "js": ["content-lovable.js", "floating-ui.js"],
+      "js": ["content-lovable.js", "compact-ui-v2.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["fg-logo.svg"],
+      "matches": ["https://lovable.dev/*"]
     }
   ],
   "content_security_policy": {
